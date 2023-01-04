@@ -1,5 +1,5 @@
 import MyReact from './lib/my-react';
-import * as MyReactDOM from './lib/my-react-dom';
+import * as MyReactDOM from './lib/my-react';
 
 const updateValue = (e) => {
   rerenderer(e.target.value);
@@ -10,12 +10,18 @@ if (container == null) {
   throw new Error('container is null');
 }
 
+
+function App(props) {
+  return <h1>Hi {props.name}</h1>
+}
+
 const rerenderer = (value) => {
   console.log('rerenderer')
 
   /** @jsx MyReact.createElement */
   const element = (
     <div>
+      <App name='foo' />
       <div id='foo'>
         <input onInput={updateValue} value={value} />
         <h2>Hello {value}</h2>
