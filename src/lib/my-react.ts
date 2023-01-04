@@ -10,6 +10,7 @@ type MyReactFiber = {
   child?: MyReactFiber | null,
   sibling?: MyReactFiber | null,
   effectTag?: EffectTag,
+  hooks?: HookState[], 
 };
 
 type MyReactHostFiber = {
@@ -51,7 +52,6 @@ function createElement(type: string | FunctionComponent, props: any, ...children
 }
 
 function createTextElement(text: string): MyReactFiber {
-  console.log({type: 'TEXT', props: {nodeValue: text}});
   return {
       type: "TEXT_ELEMENT",
       props: {
@@ -125,19 +125,23 @@ function commitRoot() {
   wipRoot = null;
 }
 
-function commitWork(fiber?: MyReactFiber | null) {
-  if (!fiber) {
-    return;
-  }
-
+function searchDomParent(fiber: MyReactFiber): HTMLElement | Text {
   let domParentFiber = fiber.parent;
   if (domParentFiber == null) throw new Error();
   while (!domParentFiber.dom) {
     domParentFiber = domParentFiber.parent;
     if (domParentFiber == null) throw new Error();
   }
-  const domParent = domParentFiber.dom;
+  return domParentFiber.dom;
+}
 
+function commitWork(fiber?: MyReactFiber | null) {
+  if (!fiber) {
+    return;
+  }
+
+  const domParent = searchDomParent(fiber);
+  
   if (fiber.effectTag === 'PLACEMENT' && fiber.dom != null) {
     domParent.appendChild(fiber.dom);
   } else if (fiber.effectTag === 'UPDATE' && fiber.dom != null) {
@@ -215,9 +219,15 @@ function performUnitOfWork(fiber: MyReactFiber): MyReactFiber | null {
     nextFiber = nextFiber.parent;
   }
   return null;
-  }
+}
+
+let wipFiber: MyReactFunctionFiber | null = null;
+let hookIndex: number | null;
 
 function updateFunctionComponent(fiber: MyReactFunctionFiber) {
+  wipFiber = fiber;
+  hookIndex = 0;
+  wipFiber.hooks = []
   const children = [fiber.type(fiber.props)];
   reconcileChildren(fiber, children);
 }
@@ -241,15 +251,11 @@ function reconcileChildren(wipFiber: MyReactFiber, elements: MyReactFiber[]) {
   let prevSibling: MyReactFiber | null = null;
 
   while (index < elements.length || oldFiber != null) {
-    const element = elements[index];
+    const element: MyReactFiber | undefined = elements[index];
 
     let newFiber: MyReactFiber | null = null;
 
-    if (element == null && oldFiber != null) {
-      console.log('aaa!');
-    };
-
-    if (oldFiber && element.type === oldFiber.type) {
+    if (oldFiber && element && element.type === oldFiber.type) {
       // same type
 
       // update the node
@@ -263,23 +269,24 @@ function reconcileChildren(wipFiber: MyReactFiber, elements: MyReactFiber[]) {
         alternate: oldFiber,
         effectTag: 'UPDATE',
       };
-
+      console.log('update', {newFiber});
     } else {
       // not same type
 
-      // add this node
-      newFiber = {
-        type: element.type,
-        props: element.props,
-        parent: wipFiber,
-        dom: null,
-        child: null,
-        sibling: null,
-        alternate: null,
-        effectTag: 'PLACEMENT',
-      };
-
-      console.log('placement', {newFiber});
+      if (element) {
+        // add this node
+        newFiber = {
+          type: element.type,
+          props: element.props,
+          parent: wipFiber,
+          dom: null,
+          child: null,
+          sibling: null,
+          alternate: null,
+          effectTag: 'PLACEMENT',
+        };
+        console.log('placement', {newFiber});
+      }
 
       if (oldFiber) {
         // delete the oldFiber's node
@@ -294,7 +301,7 @@ function reconcileChildren(wipFiber: MyReactFiber, elements: MyReactFiber[]) {
     
     if (index === 0) {
       wipFiber.child = newFiber;
-    } else {
+    } else if (element) {
       if (prevSibling == null) throw new Error();
       prevSibling.sibling = newFiber;
     }
@@ -303,7 +310,55 @@ function reconcileChildren(wipFiber: MyReactFiber, elements: MyReactFiber[]) {
   }
 }
 
+function getOldHook(): HookState | null {
+  if (wipFiber == null || wipFiber.alternate?.hooks == null || hookIndex == null) {
+    return null;
+  }
+  return wipFiber.alternate.hooks[hookIndex];
+}
+
+type HookState = {
+  state: any,
+  queue: ((prev: any) => any)[],
+}
+
+function useState<T>(initial: T): [T, (action: (prev: T) => T) => void] {
+  const oldHook = getOldHook();
+  const hook: HookState = {
+    state: oldHook ? oldHook.state : initial,
+    queue: [],
+  };
+
+  if (oldHook != null) {
+    oldHook.queue.forEach(action => {
+      hook.state = action(hook.state);
+    });
+  }
+
+  const setState = (action: (prev: T) => T) => {
+    hook.queue.push(action);
+
+    const fiber = currentRoot;
+    if (fiber == null) throw new Error();
+
+    console.log('setState', {fiber});
+    wipRoot = {
+      type: fiber.type,
+      dom: fiber.dom,
+      props: fiber.props,
+      alternate: fiber,
+    }
+    nextUnitOfWork = wipRoot;
+    deletions = [];
+  }
+
+  if (wipFiber?.hooks == null || hookIndex == null) throw new Error();
+
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+  return [hook.state as T, setState];
+}
 
 export type { MyReactFiber, FunctionComponent };
 export { render };
-export default { createElement };
+export default { createElement, useState };
