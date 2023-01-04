@@ -8,6 +8,7 @@ interface MyReactElement {
 };
 
 function createElement(type: string, props: any, ...children: MyReactElement[]): MyReactElement {
+    console.log({type, props});
     return {
         type,
         key: 'a',
@@ -21,6 +22,7 @@ function createElement(type: string, props: any, ...children: MyReactElement[]):
 }
 
 function createTextElement(text: string): MyReactElement {
+    console.log({type: 'TEXT', props: {nodeValue: text}});
     return {
         type: "TEXT_ELEMENT",
         key: 'a',
