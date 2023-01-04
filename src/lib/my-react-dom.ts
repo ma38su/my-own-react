@@ -10,9 +10,10 @@ type MyReactFiber = {
   sibling: MyReactFiber | null,
 };
 
+
 function render(fiber: MyReactFiber, container: HTMLElement) {
-  nextUnitOfWork = {
-    type: fiber.type,
+  wipRoot = {
+    type: 'root',
     dom: container,
     props: {
       children: [fiber],
@@ -20,17 +21,50 @@ function render(fiber: MyReactFiber, container: HTMLElement) {
     parent: null,
     child: null,
     sibling: null,
+  };
+  nextUnitOfWork = wipRoot;
+}
+
+let wipRoot: MyReactFiber | null = null;
+let nextUnitOfWork: MyReactFiber | null = null;
+
+function commitRoot() {
+  if (wipRoot == null) return;
+  
+  // TODO add nodes to dom
+  commitWork(wipRoot.child);
+  wipRoot = null;
+}
+
+function commitWork(fiber: MyReactFiber | null) {
+  if (!fiber) {
+    return;
   }
+
+  if (fiber.parent?.dom == null) throw new Error();
+  if (fiber.dom === null) throw new Error();
+
+  const domParent = fiber.parent.dom;
+  domParent.appendChild(fiber.dom);
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
 }
 
 // 無限ループ
-let nextUnitOfWork: MyReactFiber | null = null;
 function workLoop(deadline: IdleDeadline) {
+
+  // Render Pharse
   let shouldYield = false;
   while (nextUnitOfWork && !shouldYield) {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
     shouldYield = deadline.timeRemaining() < 1;
   }
+
+  // Commit Pharse
+  if (!nextUnitOfWork) {
+    commitRoot();
+  }
+
   requestIdleCallback(workLoop);
 }
 requestIdleCallback(workLoop);
@@ -55,10 +89,6 @@ function performUnitOfWork(fiber: MyReactFiber): MyReactFiber | null {
     fiber.dom = createDom(fiber);
   }
 
-  if (fiber.parent?.dom) {
-    fiber.parent.dom.appendChild(fiber.dom);
-  }
-
   // create new fibers
   const elements = fiber.props.children;
   let index = 0;
@@ -77,8 +107,7 @@ function performUnitOfWork(fiber: MyReactFiber): MyReactFiber | null {
     if (index === 0) {
       fiber.child = newFiber;
     } else {
-      if (prevSibling == null) throw new Error('assert');
-
+      if (prevSibling == null) throw new Error();
       prevSibling.sibling = newFiber;
     }
     prevSibling = newFiber;
